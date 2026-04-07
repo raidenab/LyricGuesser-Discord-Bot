@@ -1,0 +1,317 @@
+import os
+import json
+import time
+import random
+import re
+import string
+import asyncio
+
+import discord
+from dotenv import load_dotenv
+
+load_dotenv()
+
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+if not DISCORD_TOKEN:
+    raise RuntimeError("DISCORD_TOKEN missing. Put it in .env next to bot.py")
+
+SNIPPETS_FILE = "snippets.json"
+
+# Per-channel active rounds:
+# channel_id -> {
+#   "answer_song": str,
+#   "artist": str,
+#   "snippet": str,
+#   "started_at": float,
+#   "hint_sent": bool,
+#   "locked": bool,
+#   "task": asyncio.Task
+# }
+rounds: dict[int, dict] = {}
+
+# Per-guild scores: guild_id -> {user_id: points}
+scores: dict[int, dict[int, int]] = {}
+
+# Per-guild streaks: guild_id -> {user_id: streak_count}
+streaks: dict[int, dict[int, int]] = {}
+
+
+def normalize(text: str) -> str:
+    """Lowercase, remove punctuation, collapse spaces."""
+    text = text.lower()
+    text = re.sub(rf"[{re.escape(string.punctuation)}]", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def load_snippets() -> list[dict]:
+    """Load snippets from local JSON file."""
+    with open(SNIPPETS_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, list):
+        raise ValueError("snippets.json must be a JSON array (list).")
+    return data
+
+
+def pick_snippet_for_artist(artist_name: str) -> dict | None:
+    """Pick a random snippet matching artist (case-insensitive)."""
+    artist_name = artist_name.strip()
+    if not artist_name:
+        return None
+
+    snippets = load_snippets()
+    matches = [
+        s for s in snippets
+        if normalize(s.get("artist", "")) == normalize(artist_name)
+    ]
+    if not matches:
+        return None
+    return random.choice(matches)
+
+
+def add_points(guild_id: int, user_id: int, delta: int) -> int:
+    """Add points, return new score."""
+    if guild_id not in scores:
+        scores[guild_id] = {}
+    scores[guild_id][user_id] = scores[guild_id].get(user_id, 0) + delta
+    return scores[guild_id][user_id]
+
+
+def get_score(guild_id: int, user_id: int) -> int:
+    return scores.get(guild_id, {}).get(user_id, 0)
+
+
+def format_leaderboard(guild_id: int) -> str:
+    board = scores.get(guild_id, {})
+    if not board:
+        return "No scores yet. Start a round with `$lyrics <artist>`."
+
+    top = sorted(board.items(), key=lambda kv: kv[1], reverse=True)[:10]
+    lines = ["🏆 **Leaderboard**"]
+    for i, (uid, pts) in enumerate(top, start=1):
+        lines.append(f"{i}. <@{uid}> — **{pts}**")
+    return "\n".join(lines)
+
+
+def reset_streak(guild_id: int, user_id: int):
+    if guild_id not in streaks:
+        streaks[guild_id] = {}
+    streaks[guild_id][user_id] = 0
+
+
+def inc_streak(guild_id: int, user_id: int) -> int:
+    if guild_id not in streaks:
+        streaks[guild_id] = {}
+    streaks[guild_id][user_id] = streaks[guild_id].get(user_id, 0) + 1
+    return streaks[guild_id][user_id]
+
+
+async def round_timer(channel: discord.abc.Messageable, channel_id: int):
+    """
+    After 10s: send first-letter hint (once).
+    After 20s: lock the round (no points).
+    """
+    # Hint at 10 seconds
+    await asyncio.sleep(10)
+
+    if channel_id not in rounds:
+        return
+
+    r = rounds[channel_id]
+    if not r.get("hint_sent", False):
+        answer = r["answer_song"]
+        first_letter = answer[0].upper() if answer else "?"
+        r["hint_sent"] = True
+        await channel.send(f"💡 **Hint:** song starts with **{first_letter}**")
+
+    # Lock at 20 seconds total (another 10 seconds)
+    await asyncio.sleep(10)
+
+    if channel_id not in rounds:
+        return
+
+    rounds[channel_id]["locked"] = True
+    await channel.send("⏱️ **Time’s up!** You can still guess, but **no points** now.")
+
+
+class MyClient(discord.Client):
+    async def on_ready(self):
+        print(f"Logged on as {self.user}!")
+
+    async def on_message(self, message: discord.Message):
+        if message.author.bot:
+            return
+
+        content = message.content.strip()
+        channel_id = message.channel.id
+        guild_id = message.guild.id if message.guild else None
+
+        # -------------------------
+        # END GAME
+        # -------------------------
+        if content == "$endgame":
+            if channel_id in rounds:
+                task = rounds[channel_id].get("task")
+                if task and not task.done():
+                    task.cancel()
+                rounds.pop(channel_id, None)
+                await message.channel.send("🛑 Round ended.")
+            else:
+                await message.channel.send("Shutting Down...")
+                await client.close()
+            return
+
+        # -------------------------
+        # SCORE
+        # -------------------------
+        if content == "$score":
+            if guild_id is None:
+                await message.channel.send("Scores work best in a server (guild).")
+                return
+            await message.channel.send(format_leaderboard(guild_id))
+            return
+
+        # -------------------------
+        # START ROUND
+        # Usage:
+        #   $lyrics <artist>
+        #   $lyrics hard <artist>   (hides artist in prompt)
+        # -------------------------
+        if content.startswith("$lyrics"):
+            parts = content.split(maxsplit=2)
+
+            if len(parts) == 1:
+                await message.channel.send("Usage: `$lyrics <artist>` or `$lyrics hard <artist>`")
+                return
+
+            hard_mode = False
+            if len(parts) >= 2 and parts[1].lower() == "hard":
+                hard_mode = True
+                if len(parts) < 3:
+                    await message.channel.send("Usage: `$lyrics hard <artist>`")
+                    return
+                artist_name = parts[2].strip()
+            else:
+                artist_name = content.split(maxsplit=1)[1].strip()
+
+            if not artist_name:
+                await message.channel.send("Usage: `$lyrics <artist>`")
+                return
+
+            if channel_id in rounds:
+                await message.channel.send("A round is already active here! Use `$endgame` first.")
+                return
+
+            picked = pick_snippet_for_artist(artist_name)
+            if not picked:
+                await message.channel.send(
+                    f"I don’t have any snippets saved for **{artist_name}** yet.\n"
+                    f"Add some to `{SNIPPETS_FILE}` and try again."
+                )
+                return
+
+            answer_song = picked.get("song", "").strip()
+            true_artist = picked.get("artist", artist_name).strip()
+            snippet = picked.get("snippet", "").strip()
+
+            if not answer_song or not snippet:
+                await message.channel.send(
+                    f"Bad entry in `{SNIPPETS_FILE}` for artist **{artist_name}** (missing song/snippet)."
+                )
+                return
+
+            rounds[channel_id] = {
+                "answer_song": answer_song,
+                "artist": true_artist,
+                "snippet": snippet,
+                "started_at": time.time(),
+                "hint_sent": False,
+                "locked": False,
+                "task": None,
+            }
+
+            # Start timers
+            task = asyncio.create_task(round_timer(message.channel, channel_id))
+            rounds[channel_id]["task"] = task
+
+            header = "🎤 **Guess the song!**"
+            if not hard_mode:
+                header += f" (Artist: **{true_artist}**)"
+            await message.channel.send(
+                f"{header}\n\n> {snippet}\n\nReply with: `$guess <song title>`"
+            )
+            return
+
+        # -------------------------
+        # GUESS
+        # -------------------------
+        if content.startswith("$guess"):
+            if channel_id not in rounds:
+                await message.channel.send("No active round. Start one with `$lyrics <artist>`.")
+                return
+
+            parts = content.split(maxsplit=1)
+            if len(parts) == 1 or not parts[1].strip():
+                await message.channel.send("Usage: `$guess <song title>`")
+                return
+
+            guess = parts[1].strip()
+            r = rounds[channel_id]
+            answer = r["answer_song"]
+            locked = r["locked"]
+            elapsed = time.time() - r["started_at"]
+
+            if normalize(guess) != normalize(answer):
+                await message.channel.send("❌ Nope — try again!")
+                return
+
+            # Correct guess: end the round
+            task = r.get("task")
+            if task and not task.done():
+                task.cancel()
+            rounds.pop(channel_id, None)
+
+            # If DM, we can’t keep a proper server leaderboard
+            if guild_id is None:
+                await message.channel.send(
+                    f"✅ **Correct!** The song was **{answer}**.\n⏱️ {elapsed:.2f}s"
+                )
+                return
+
+            # Lock rule: after 20s, no points + streak reset
+            if locked:
+                reset_streak(guild_id, message.author.id)
+                await message.channel.send(
+                    f"⚠️ **Correct, but too late!** The song was **{answer}**.\n"
+                    f"⏱️ {elapsed:.2f}s\n"
+                    f"❌ **No points awarded.**"
+                )
+                return
+
+            # On-time: +1 point, streak handling
+            streak = inc_streak(guild_id, message.author.id)
+
+            add_points(guild_id, message.author.id, 1)
+            bonus_text = ""
+
+            # 3-in-a-row bonus
+            if streak == 3:
+                add_points(guild_id, message.author.id, 2)
+                streaks[guild_id][message.author.id] = 0
+                bonus_text = " 🔥 **Streak bonus +2!** (3 in a row)"
+
+            new_score = get_score(guild_id, message.author.id)
+
+            await message.channel.send(
+                f"✅ **Correct!** The song was **{answer}**.\n"
+                f"⏱️ {elapsed:.2f}s\n"
+                f"⭐ <@{message.author.id}> now has **{new_score}** point(s).{bonus_text}"
+            )
+            return
+
+
+intents = discord.Intents.default()
+intents.message_content = True
+
+client = MyClient(intents=intents)
+client.run(DISCORD_TOKEN)
