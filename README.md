@@ -24,9 +24,3 @@ A competitive music trivia bot built with `discord.py`. Challenge your server to
 - Python 3.10 or higher
 - A Discord Bot Token (from the [Discord Developer Portal](https://discord.com/developers/applications))
 
-### 2. Installation
-Clone the repository and install dependencies:
-```bash
-git clone [https://github.com/YOUR_USERNAME/lyric-guesser-bot.git](https://github.com/YOUR_USERNAME/lyric-guesser-bot.git)
-cd lyric-guesser-bot
-pip install discord.py python-dotenv
