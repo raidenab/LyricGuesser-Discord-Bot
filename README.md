@@ -38,3 +38,11 @@ A competitive music trivia bot built with **discord.py**. Challenge your server 
 Run this command in your terminal:
 ```bash
 pip install discord.py python-dotenv
+```
+
+### 3. Project Setup
+* **In your project's root folder, create a new file named `.env` and put your DISCORD token in this format `DISCORD_TOKEN=your_token_here`
+* *Next, insert the JSON file into the same folder. *
+
+### 4. Run the Bot and enjoy!
+
