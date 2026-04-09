@@ -5,10 +5,8 @@ import random
 import re
 import string
 import asyncio
-
 import discord
 from dotenv import load_dotenv
-
 load_dotenv()
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
@@ -16,25 +14,7 @@ if not DISCORD_TOKEN:
     raise RuntimeError("DISCORD_TOKEN missing. Put it in .env next to bot.py")
 
 SNIPPETS_FILE = "snippets.json"
-
-# Per-channel active rounds:
-# channel_id -> {
-#   "answer_song": str,
-#   "artist": str,
-#   "snippet": str,
-#   "started_at": float,
-#   "hint_sent": bool,
-#   "locked": bool,
-#   "task": asyncio.Task
-# }
 rounds: dict[int, dict] = {}
-
-# Per-guild scores: guild_id -> {user_id: points}
-scores: dict[int, dict[int, int]] = {}
-
-# Per-guild streaks: guild_id -> {user_id: streak_count}
-streaks: dict[int, dict[int, int]] = {}
-
 
 def normalize(text: str) -> str:
     """Lowercase, remove punctuation, collapse spaces."""
