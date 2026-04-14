@@ -1,65 +1,47 @@
 [
   {
     "artist": "Che",
-    "song": "Miley Cyrus",
-    "snippet": "I been geeked up all night"
-  },
-  {
-    "artist": "Che",
-    "song": "Pizza Time",
-    "snippet": "I just pulled up with the team"
-  },
-  {
-    "artist": "Che",
-    "song": "Agenda",
-    "snippet": "They don’t know what I been on"
-  },
-
-  {
-    "artist": "OsamaSon",
-    "song": "Pop",
-    "snippet": "I been off the grid, yeah"
+    "song": "Sayso",
+    "snippet": "Sayso off drugs every evening"
   },
   {
     "artist": "OsamaSon",
-    "song": "X & Sex",
-    "snippet": "All this money make her stare"
-  },
-  {
-    "artist": "OsamaSon",
-    "song": "Anti",
-    "snippet": "They don’t know what I been through"
-  },
-
-  {
-    "artist": "Destroy Lonely",
-    "song": "NOSTYLIST",
-    "snippet": "I don’t need no stylist"
+    "song": "Congrats",
+    "snippet": "Congratulations, bro, you on yo' shit"
   },
   {
     "artist": "Destroy Lonely",
-    "song": "Bane",
-    "snippet": "I feel like Bane when I walk in"
-  },
-  {
-    "artist": "Destroy Lonely",
-    "song": "If Looks Could Kill",
-    "snippet": "If looks could kill, baby"
-  },
-
-  {
-    "artist": "Ken Carson",
-    "song": "Yale",
-    "snippet": "I just pulled up in a Tonka"
+    "song": "VTMNTSCOAT",
+    "snippet": "This blood red my coat"
   },
   {
     "artist": "Ken Carson",
-    "song": "Rock N Roll",
-    "snippet": "I been rockin’ all black"
+    "song": "Jennifer’s Body",
+    "snippet": "Two things I ain't ever seen: A nigga that beat a gun and a bitch I need"
   },
   {
-    "artist": "Ken Carson",
-    "song": "Fighting My Demons",
-    "snippet": "I been fighting my demons"
+    "artist": "Nettspend",
+    "song": "nothing like uuu",
+    "snippet": "I been tryna get geeked all night"
+  },
+  {
+    "artist": "Homixide Gang",
+    "song": "Uzi Work",
+    "snippet": "Let's see how that Uzi work"
+  },
+  {
+    "artist": "Rich Amiri",
+    "song": "One Call",
+    "snippet": "It only took me one call"
+  },
+  {
+    "artist": "Hardrock",
+    "song": "South Of France",
+    "snippet": "No matter how rich I get I still feel like a hood nigga"
+  },
+  {
+    "artist": "Lazer Dim 700",
+    "song": "Lazer Rock",
+    "snippet": "I drive a whip get out my lane"
   }
 ]
